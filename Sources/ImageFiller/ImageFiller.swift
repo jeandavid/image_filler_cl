@@ -5,13 +5,19 @@ public typealias WeightCalculator = (Coordinate, Coordinate) -> Double
 /// Intput: GrayImage, Weight, Connectivity
 /// Output: GrayImage ( call fill() )
 public struct ImageFiller {
+    
+    // MARK: Properties
 
     private let image: GrayImage
+    /// Weight assigns a non-negative double weight to a pair of pixel coordinates
     private let weight: WeightCalculator
+    /// Pixels can be either 4- or 8-connected.
     private let pixelConnectivity: PixelConnectivity
 
-    var hole = Set<Offset>()
-    var boundary = Set<Offset>()
+    /// Set of all the hole pixel offsets.
+    private var hole = Set<Offset>()
+    /// Set of all the boundary pixel offsets.
+    private var boundary = Set<Offset>()
 
     public init(image: GrayImage, weight: @escaping WeightCalculator, connectivity: Int) {
         self.image = image
@@ -20,11 +26,14 @@ public struct ImageFiller {
         setupHole()
         setupBoundary()
     }
+    
+    // MARK: Setup
 
     mutating func setupHole() {
         self.hole = Set(self.image.hole)
     }
-
+    
+    /// A boundary pixel is defined as a pixel that is connected to a hole pixel, but is not in the hole itself.
     mutating func setupBoundary() {
         self.hole.forEach { (offset) in
             let coordinate = image.convertOffsetToCoordinate(offset)
@@ -42,7 +51,10 @@ public struct ImageFiller {
 
         }
     }
+    
+    // MARK: Main API
 
+    /// Returns a filled image
     public func fill() -> GrayImage {
         let pixels: [Pixel] = image.pixels.enumerated().map({ (offset, pixel) in
             if hole.contains(offset) {
@@ -53,11 +65,13 @@ public struct ImageFiller {
         })
         return GrayImage(pixels: pixels, width: image.width, height: image.height)
     }
-
+    
+    // MARK: Helper
+    
+    /// Returns the new value of a hole pixel
     private func color(_ pixel: Pixel, at offset: Offset) -> Pixel {
         var top: Double = 0
         let coordinate = image.convertOffsetToCoordinate(offset)
-        // TODO: reduce
         for boundaryOffset in boundary {
             if let pixelAtBoundary = image.pixel(at: boundaryOffset) {
                 let boundaryCoordinate = image.convertOffsetToCoordinate(boundaryOffset)
@@ -65,7 +79,6 @@ public struct ImageFiller {
             }
         }
         var bottom: Double = 0
-        // TODO: reduce
         for boundaryOffset in boundary {
             let boundaryCoordinate = image.convertOffsetToCoordinate(boundaryOffset)
             bottom += weight(coordinate, boundaryCoordinate)

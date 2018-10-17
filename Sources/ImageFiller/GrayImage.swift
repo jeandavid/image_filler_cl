@@ -12,6 +12,9 @@ public struct Pixel {
     }
 }
 
+/// GrayImage stores the pixel data for a gray scale image with a hole.
+/// Pixel values are of type double in the range [0, 1].
+/// If a pixel sits in a hole then its value is -1.
 public struct GrayImage {
     public let pixels: [Pixel]
     public let coordinator: Coordinator
@@ -33,6 +36,7 @@ public struct GrayImage {
         return coordinator.height
     }
 
+    /// Returns the offsets of all the pixels that sits in a hole, but are not on the image boundary
     var hole: [Offset] {
         return pixels.enumerated().compactMap { (offset: Offset, pixel: Pixel) in
             guard pixel.isHole else {return nil}

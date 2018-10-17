@@ -8,37 +8,98 @@
 import Cocoa
 import ImageFiller
 
-struct ImageFillerWrapper {
+/// ImageFillerWrapper is responsible for converting between different image formats and calling the ImageFiller module
+public struct ImageFillerWrapper {
+    
+    // MARK: Properties
 
-    let image: NSImage
+    /// Original RGB image
+    private let image: NSImage
     
-    let z: Int
+    /// Optional Gray mask
+    private let mask: NSImage?
     
-    let epsilon: Double
+    private let z: Int
     
-    let connectivity: Int
+    private let epsilon: Double
     
-    var width: Int {
+    private let connectivity: Int
+    
+    /// Width pixel dimension
+    private var width: Int {
         let rep = image.representations[0]
         return rep.pixelsWide
     }
     
-    var height: Int {
+    /// Height pixel dimension
+    private var height: Int {
         let rep = image.representations[0]
         return rep.pixelsHigh
     }
     
-    var size: Int {
+    private var size: Int {
         return width * height
     }
     
-    var bitmap: CGImage? {
+    private var bitmap: CGImage? {
         return image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+    }
+    
+    public init(image: NSImage, z: Int, epsilon: Double, connectivity: Int, mask: NSImage? = nil) {
+        self.image = image
+        self.z = z
+        self.epsilon = epsilon
+        self.connectivity = connectivity
+        self.mask = mask
+    }
+    
+    // MARK: Main API
+    
+    public func run() throws {
+        // Step 1
+        //
+        // Convert input RGB Image to gray scale bitmap
+        // Convert gray scale bitmap to a GrayImage ready to be used by the ImageFiller module
+        //
+        guard let rgbBitmap: CGImage = bitmap, let grayBitmap: CGImage = convertToGrayScale(rgbBitmap) else {
+            throw Error.failToConvertInputImageToGrayScale
+        }
+        let pixelData: [UInt8] = convertBitmapToPixels(grayBitmap)
+        
+        // Step 2
+        //
+        // If there is a mask, then merge it with the input (turned gray) image
+        // If not, create a mask placed at (100,100) of dimension 20*20
+        //
+        var grayImage: GrayImage!
+        if let mask = mask, let maskBitmap = mask.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            let maskData: [UInt8] = convertBitmapToPixels(maskBitmap)
+            grayImage = merge(pixelData: pixelData, maskData: maskData)
+        } else {
+            grayImage = insertHole(pixelData: pixelData)
+        }
+        
+        // Step 3
+        //
+        // Call the ImageFiller module that fills the hole and returns a filled GrayImage
+        //
+        let imageFiller = ImageFiller(image: grayImage, weight: weightCalculator(), connectivity: 8)
+        let filledGrayImage: GrayImage = imageFiller.fill()
+        
+        // Step 4
+        //
+        // Convert the filled GrayImage back to a bitmap and wrtie it to a file named "filled.png" in the current directory
+        //
+        let pixelDataFilled: [UInt8] = convertGrayImageToPixels(filledGrayImage)
+        if let bitmapFilled = convertPixelsToBitmap(pixelDataFilled) {
+            let filledURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath + "/filled.png")
+            try writeBitmapToFile(bitmapFilled, to: filledURL)
+        }
     }
     
     // MARK: Conversion from RGB to Gray bitmap
     
-    func convertToGrayScale(_ rgbBitmap: CGImage) -> CGImage? {
+    private func convertToGrayScale(_ rgbBitmap: CGImage) -> CGImage? {
         let colorSpace = CGColorSpaceCreateDeviceGray()
         let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
         let context = CGContext(
@@ -58,7 +119,7 @@ struct ImageFillerWrapper {
     
     // MARK: Conversion between bitmap and pixels for gray scale images
     
-    func convertPixelsToBitmap(_ pixelData: [UInt8]) -> CGImage? {
+    private func convertPixelsToBitmap(_ pixelData: [UInt8]) -> CGImage? {
         var bitmap: CGImage?
         let colorSpace = CGColorSpaceCreateDeviceGray()
         pixelData.withUnsafeBytes { ptr in
@@ -74,7 +135,7 @@ struct ImageFillerWrapper {
         return bitmap
     }
     
-    func convertBitmapToPixels(_ bitmap: CGImage) -> [UInt8] {
+    private func convertBitmapToPixels(_ bitmap: CGImage) -> [UInt8] {
         var pixelData = [UInt8](repeating: 0, count: size)
         let colorSpace = CGColorSpaceCreateDeviceGray()
         let context = CGContext(data: &pixelData,
@@ -88,33 +149,43 @@ struct ImageFillerWrapper {
         return pixelData
     }
     
-    // MARK: Helpers
+    // MARK: Conversion between pixel data and GrayImage, basically rescaling from {[0,1], -1} to [0, 255]
     
-    func insertHole(in grayImage: GrayImage) -> GrayImage {
-        let start: Coordinate = (200, 100)
-        let end: Coordinate = (220, 120)
-        let box: Box = (start, end)
-        var pixelsWithHole = [Pixel]()
-        grayImage.pixels.enumerated().forEach { (offset, pixel) in
-            if grayImage.coordinator.isInside(offset: offset, box: box) {
-                pixelsWithHole.append(Pixel(value: -1.0))
-            } else {
-                pixelsWithHole.append(pixel)
-            }
-        }
-        return GrayImage(pixels: pixelsWithHole, width: grayImage.width, height: grayImage.height)
-    }
-    
-    func convertGrayImageToPixels(_ grayImage: GrayImage) -> [UInt8] {
+    private func convertGrayImageToPixels(_ grayImage: GrayImage) -> [UInt8] {
         return grayImage.pixels.map { max(UInt8.min, UInt8($0.value * 255.0)) }
     }
     
-    func convertPixelsToGrayImage(_ pixelData: [UInt8]) -> GrayImage {
-        let pixels: [Pixel] = pixelData.map { Pixel(value: Double($0) / Double(UInt8.max)) }
+    // MARK: Helpers
+
+    private func insertHole(pixelData: [UInt8]) -> GrayImage {
+        let start: Coordinate = (100, 100)
+        let end: Coordinate = (120, 120)
+        let box: Box = (start, end)
+        let coordinator = Coordinator(width: width, height: height)
+        var pixels = [Pixel]()
+        pixelData.enumerated().forEach { (offset, originalValue) in
+            if coordinator.isInside(offset: offset, box: box) {
+                pixels.append(Pixel(value: -1.0))
+            } else {
+                pixels.append(Pixel(value: Double(originalValue) / Double(UInt8.max)))
+            }
+        }
         return GrayImage(pixels: pixels, width: width, height: height)
     }
     
-    func writeBitmapToFile(_ image: CGImage, to destinationURL: URL) throws {
+    private func merge(pixelData: [UInt8], maskData: [UInt8]) -> GrayImage {
+        var pixels = [Pixel]()
+        pixelData.enumerated().forEach { (offset, originalValue) in
+            if maskData[offset] == UInt8.min {
+                pixels.append(Pixel(value: -1.0))
+            } else {
+                pixels.append(Pixel(value: Double(originalValue) / Double(UInt8.max)))
+            }
+        }
+        return GrayImage(pixels: pixels, width: width, height: height)
+    }
+    
+    private func writeBitmapToFile(_ image: CGImage, to destinationURL: URL) throws {
         guard let destination = CGImageDestinationCreateWithURL(destinationURL as CFURL, kUTTypePNG, 1, nil) else {throw Error.failToCreateImageDestination }
         CGImageDestinationAddImage(destination, image, nil)
         let result = CGImageDestinationFinalize(destination)
@@ -123,45 +194,29 @@ struct ImageFillerWrapper {
         }
     }
     
-    func mockHole(for grayImage: GrayImage) -> [UInt8] {
-        let start: Coordinate = (100, 100)
-        let end: Coordinate = (120, 120)
-        let box: Box = (start, end)
-        var mock = [UInt8]()
-        grayImage.pixels.enumerated().forEach { (offset, _) in
-            if grayImage.coordinator.isInside(offset: offset, box: box) {
-                mock.append(UInt8.min)
-            } else {
-                mock.append(UInt8.max)
-            }
-        }
-        return mock
-    }
-    
     // MARK: Weight Function
     
-    func weightCalculator() -> WeightCalculator {
+    /// Returns the default weightFunction that depends of the input epsilon and z
+    private func weightCalculator() -> WeightCalculator {
         return weightFunction
     }
     
     /// Euclidean Distance
-    func distance(first: Coordinate, second: Coordinate) -> Double {
+    private func distance(first: Coordinate, second: Coordinate) -> Double {
         return sqrt(pow(Double(first.column - second.column), 2) + pow(Double(first.row - second.row), 2))
     }
     
     /// Default WeightFunction
-    func weightFunction(first: Coordinate, second: Coordinate) -> Double {
+    private func weightFunction(first: Coordinate, second: Coordinate) -> Double {
         return 1.0 / (pow(distance(first: first, second: second), Double(z)) + epsilon)
     }
-    
 }
 
 // MARK: Custom Error
 
 extension ImageFillerWrapper {
     enum Error: Swift.Error {
-        case failToConvertToCGImage
-        case failToConvertToGray
+        case failToConvertInputImageToGrayScale
         case failToCreateImageDestination
         case failToWriteImage
     }

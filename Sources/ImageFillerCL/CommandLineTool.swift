@@ -10,6 +10,8 @@ import Cocoa
 import ImageFiller
 import Utility
 
+/// CommandLineTool is responsible for parsing the command line arguments,
+/// initializing the image filler wrapper and running it
 struct CommandLineTool {
     private let arguments: [String]
     
@@ -18,13 +20,13 @@ struct CommandLineTool {
     }
 
     func run() throws {
-        
-        let parser = ArgumentParser(usage: "imageFile <options>", overview: "This library fills holes in images.")
+        let parser = ArgumentParser(usage: "imageFile <options>", overview: "This library fills holes in images. Pass a RGB input image, an optional mask, it will output a filled image written in the current directory")
         
         let imageFileArg: PositionalArgument<String> = parser.add(positional: "imageFile", kind: String.self)
-        let zArg: OptionArgument<Int> = parser.add(option: "--zexponent", shortName: "-z", kind: Int.self, usage: "Exponent for the weight function. Default to 2")
+        let zArg: OptionArgument<Int> = parser.add(option: "--zexponent", shortName: "-z", kind: Int.self, usage: "Exponent for the weight function. Default to 4")
         let epsilonArg: OptionArgument<String> = parser.add(option: "--epsilon", shortName: "-e", kind: String.self, usage: "Epsilon for the weight function. Default to 1e-9")
-        let connectivityArg: OptionArgument<Int> = parser.add(option: "--connectivity", shortName: "-c", kind: Int.self, usage: "Pixel Connectivity. Default to 4")
+        let connectivityArg: OptionArgument<Int> = parser.add(option: "--connectivity", shortName: "-c", kind: Int.self, usage: "Pixel Connectivity. Default to 8")
+        let maskArg: OptionArgument<String> = parser.add(option: "--mask", shortName: "-m", kind: String.self, usage: "Mask that defines the hole. It should be a grayscale image. Black pixel will be considered as a mask. If a mask is not provided, then we will use a mock of dimension 20*20, placed at (100,100). Minimum size for the original image should therefore be 120*120")
         
         let parsedArguments = try parser.parse(arguments)
         
@@ -32,34 +34,28 @@ struct CommandLineTool {
             throw Error.missingImageFilenameArgument
         }
         
-        let z: Int = parsedArguments.get(zArg) ?? 2
+        let z: Int = parsedArguments.get(zArg) ?? 4
         
         var epsilon: Double = 1e-9
         if let epsilonString = parsedArguments.get(epsilonArg), let eps = Double(epsilonString) {
             epsilon = eps
         }
         
-        let connectivity = parsedArguments.get(connectivityArg) ?? 4
+        let connectivity = parsedArguments.get(connectivityArg) ?? 8
+        
+        let maskFile = parsedArguments.get(maskArg)
         
         guard let nsImage = NSImage(byReferencingFile: imageFile) else {
             throw Error.failToReadImage
         }
         
-        let imageFillerWrapper = ImageFillerWrapper(image: nsImage, z: z, epsilon: epsilon, connectivity: connectivity)
-        
-        let filledURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath + "/filled3.png")
-        if let rgbBitmap: CGImage = imageFillerWrapper.bitmap,
-            let grayBitmap: CGImage = imageFillerWrapper.convertToGrayScale(rgbBitmap) {
-            let pixelData: [UInt8] = imageFillerWrapper.convertBitmapToPixels(grayBitmap)
-            let grayImage: GrayImage = imageFillerWrapper.convertPixelsToGrayImage(pixelData)
-            let grayImageWithHole: GrayImage = imageFillerWrapper.insertHole(in: grayImage)
-            let imageFiller = ImageFiller(image: grayImageWithHole, weight: imageFillerWrapper.weightCalculator(), connectivity: 8)
-            let filledGrayImage: GrayImage = imageFiller.fill()
-            let pixelDataFilled: [UInt8] = imageFillerWrapper.convertGrayImageToPixels(filledGrayImage)
-            if let bitmapFilled = imageFillerWrapper.convertPixelsToBitmap(pixelDataFilled) {
-                try imageFillerWrapper.writeBitmapToFile(bitmapFilled, to: filledURL)
-            }
+        var nsMask: NSImage?
+        if let maskFile = maskFile {
+            nsMask = NSImage(byReferencingFile: maskFile)
         }
+        
+        let imageFillerWrapper = ImageFillerWrapper(image: nsImage, z: z, epsilon: epsilon, connectivity: connectivity, mask: nsMask)
+        try imageFillerWrapper.run()
     }
 }
 

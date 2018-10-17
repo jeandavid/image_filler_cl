@@ -1,9 +1,11 @@
 import Foundation
 
+/// Pixel Connectivity
 enum PixelConnectivity: Int {
     case four = 4
     case eight = 8
 
+    /// Based on the connectivity option, returns the coordinates of the connected pixels
     func connectedCoordinates(for coordinate: Coordinate) -> [Coordinate] {
         let top: Coordinate = (coordinate.column, coordinate.row - 1)
         let right: Coordinate = (coordinate.column + 1, coordinate.row)
