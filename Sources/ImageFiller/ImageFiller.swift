@@ -2,8 +2,7 @@ import Foundation
 
 public typealias WeightCalculator = (Coordinate, Coordinate) -> Double
 
-/// Intput: GrayImage, Weight, Connectivity
-/// Output: GrayImage ( call fill() )
+/// ImageFiller implements the algorithms to fill an image with a hole
 public struct ImageFiller {
     
     // MARK: Properties
