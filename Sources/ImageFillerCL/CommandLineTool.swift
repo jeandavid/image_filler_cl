@@ -8,32 +8,46 @@
 import Foundation
 import Cocoa
 import ImageFiller
+import Utility
 
 struct CommandLineTool {
     private let arguments: [String]
     
-    init(arguments: [String] = CommandLine.arguments) {
+    init(arguments: [String] = Array(CommandLine.arguments.dropFirst())) {
         self.arguments = arguments
     }
-    
+
     func run() throws {
-        guard arguments.count > 1 else {
-            throw Error.missingFileName
+        
+        let parser = ArgumentParser(usage: "imageFile <options>", overview: "This library fills holes in images.")
+        
+        let imageFileArg: PositionalArgument<String> = parser.add(positional: "imageFile", kind: String.self)
+        let zArg: OptionArgument<Int> = parser.add(option: "--zexponent", shortName: "-z", kind: Int.self, usage: "Exponent for the weight function. Default to 2")
+        let epsilonArg: OptionArgument<String> = parser.add(option: "--epsilon", shortName: "-e", kind: String.self, usage: "Epsilon for the weight function. Default to 1e-9")
+        let connectivityArg: OptionArgument<Int> = parser.add(option: "--connectivity", shortName: "-c", kind: Int.self, usage: "Pixel Connectivity. Default to 4")
+        
+        let parsedArguments = try parser.parse(arguments)
+        
+        guard let imageFile = parsedArguments.get(imageFileArg) else {
+            throw Error.missingImageFilenameArgument
         }
         
-        guard arguments.count == 2 else {
-            print("Wrong number of arguments")
-            throw Error.failedToCreateFile
+        let z: Int = parsedArguments.get(zArg) ?? 2
+        
+        var epsilon: Double = 1e-9
+        if let epsilonString = parsedArguments.get(epsilonArg), let eps = Double(epsilonString) {
+            epsilon = eps
         }
         
-        let filename = arguments[1]
-        guard let nsImage = NSImage(byReferencingFile: filename) else {
+        let connectivity = parsedArguments.get(connectivityArg) ?? 4
+        
+        guard let nsImage = NSImage(byReferencingFile: imageFile) else {
             throw Error.failToReadImage
         }
         
-        let imageFillerWrapper = ImageFillerWrapper(image: nsImage)
+        let imageFillerWrapper = ImageFillerWrapper(image: nsImage, z: z, epsilon: epsilon, connectivity: connectivity)
         
-        let filledURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath + "/filled2.png")
+        let filledURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath + "/filled3.png")
         if let rgbBitmap: CGImage = imageFillerWrapper.bitmap,
             let grayBitmap: CGImage = imageFillerWrapper.convertToGrayScale(rgbBitmap) {
             let pixelData: [UInt8] = imageFillerWrapper.convertBitmapToPixels(grayBitmap)
@@ -46,52 +60,12 @@ struct CommandLineTool {
                 try imageFillerWrapper.writeBitmapToFile(bitmapFilled, to: filledURL)
             }
         }
-        
-        /*
-        // Create a gray image with a hole in an rgb image, write it to file
-        let holeURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath + "/hole.png")
-        if let rgbBitmap: CGImage = imageFillerWrapper.bitmap,
-            let grayBitmap: CGImage = imageFillerWrapper.convertToGrayScale(rgbBitmap) {
-            let pixelData: [UInt8] = imageFillerWrapper.convertBitmapToPixels(grayBitmap)
-            let grayImage: GrayImage = imageFillerWrapper.convertPixelsToGrayImage(pixelData)
-            let grayImageWithHole: GrayImage = imageFillerWrapper.insertHole(in: grayImage)
-            let pixelDataWithHole: [UInt8] = imageFillerWrapper.convertGrayImageToPixels(grayImageWithHole)
-            if let bitmapWithHole = imageFillerWrapper.convertPixelsToBitmap(pixelDataWithHole) {
-                try imageFillerWrapper.writeBitmapToFile(bitmapWithHole, to: holeURL)
-            }
-        }
-        */
-        
-        /*
-        if let rgbBitmap: CGImage = imageFillerWrapper.bitmap,
-            let grayBitmap: CGImage = imageFillerWrapper.convertToGrayScale(rgbBitmap) {
-            let pixelData: [UInt8] = imageFillerWrapper.convertBitmapToPixels(grayBitmap)
-            let grayImage: GrayImage = imageFillerWrapper.convertPixelsToGrayImage(pixelData)
-            let mockPixelData: [UInt8] = imageFillerWrapper.mockHole(for: grayImage)
-            if let mockBitmap: CGImage = imageFillerWrapper.convertPixelsToBitmap(mockPixelData) {
-                try imageFillerWrapper.writeBitmapToFile(mockBitmap, to: mockURL)
-            }
-        }
-        */
-        
-        //let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath + "/gray.png")
-        //if let rgbBitmap = imageFillerWrapper.bitmap,
-        //    let grayBitmap = imageFillerWrapper.convertToGrayScale(rgbBitmap) {
-        //    try imageFillerWrapper.writeBitmapToFile(grayBitmap, to: url)
-        //}
-        
-        //if let rgbBitmap = imageFillerWrapper.bitmap,
-        //    let grayBitmap = imageFillerWrapper.convertToGrayScale(rgbBitmap) {
-        //    let pixels = imageFillerWrapper.convertBitmapToPixels(grayBitmap)
-        //    print("pixels count: \(pixels.count)")
-        //}
     }
 }
 
 extension CommandLineTool {
     enum Error: Swift.Error {
-        case missingFileName
-        case failedToCreateFile
+        case missingImageFilenameArgument
         case failToReadImage
     }
 }

@@ -12,18 +12,11 @@ struct ImageFillerWrapper {
 
     let image: NSImage
     
-    let epsilon: Double
-    
     let z: Int
     
-    let connectivity: Int
+    let epsilon: Double
     
-    init(image: NSImage, epsilon: Double = 1e-9, z: Int = 2, connectivity: Int = 4) {
-        self.image = image
-        self.epsilon = epsilon
-        self.z = z
-        self.connectivity = connectivity
-    }
+    let connectivity: Int
     
     var width: Int {
         let rep = image.representations[0]
