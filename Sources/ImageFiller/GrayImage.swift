@@ -1,22 +1,36 @@
 import Foundation
 
-typealias Offset = Int
-typealias Coordinate = (column: Int, row: Int)
-
-struct Pixel {
-    var value: Double
+public struct Pixel {
+    public var value: Double
+    
+    public init(value: Double) {
+        self.value = value
+    }
+    
     var isHole: Bool {
         return value == -1
     }
 }
 
-struct GrayImage {
-    let pixels: [Pixel]
-    let width: Int
-    let height: Int
+public struct GrayImage {
+    public let pixels: [Pixel]
+    public let coordinator: Coordinator
+    
+    public init(pixels: [Pixel], width: Int, height: Int) {
+        self.pixels = pixels
+        self.coordinator = Coordinator(width: width, height: height)
+    }
 
-    var pixelCount: Int {
+    public var pixelCount: Int {
         return pixels.count
+    }
+    
+    public var width: Int {
+        return coordinator.width
+    }
+    
+    public var height: Int {
+        return coordinator.height
     }
 
     var hole: [Offset] {
@@ -40,21 +54,14 @@ struct GrayImage {
     }
 
     func convertOffsetToCoordinate(_ offset: Offset) -> Coordinate {
-        return (offset % width, offset / width)
+        return coordinator.coordinate(for: offset)
     }
 
     func convertCoordinateToOffset(_ coordinate: Coordinate) -> Offset {
-        return coordinate.row * width + coordinate.column
+        return coordinator.offset(for: coordinate)
     }
 
     func isOffsetOnTheEdge(_ offset: Offset) -> Bool {
-        let coordinate = convertOffsetToCoordinate(offset)
-        if coordinate.column == 0 || coordinate.column == width - 1 {
-            return true
-        }
-        if coordinate.row == 0 || coordinate.column == height - 1 {
-            return true
-        }
-        return false
+        return !coordinator.isInside(offset: offset)
     }
 }

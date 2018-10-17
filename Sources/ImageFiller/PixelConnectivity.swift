@@ -1,8 +1,8 @@
 import Foundation
 
-enum PixelConnectivity {
-    case four
-    case eight
+enum PixelConnectivity: Int {
+    case four = 4
+    case eight = 8
 
     func connectedCoordinates(for coordinate: Coordinate) -> [Coordinate] {
         let top: Coordinate = (coordinate.column, coordinate.row - 1)

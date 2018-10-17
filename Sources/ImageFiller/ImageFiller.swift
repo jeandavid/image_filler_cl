@@ -1,10 +1,10 @@
 import Foundation
 
-typealias WeightCalculator = (Pixel, Pixel) -> Double
+public typealias WeightCalculator = (Coordinate, Coordinate) -> Double
 
 /// Intput: GrayImage, Weight, Connectivity
 /// Output: GrayImage ( call fill() )
-struct ImageFiller {
+public struct ImageFiller {
 
     private let image: GrayImage
     private let weight: WeightCalculator
@@ -13,10 +13,10 @@ struct ImageFiller {
     var hole = Set<Offset>()
     var boundary = Set<Offset>()
 
-    init(image: GrayImage, weight: @escaping WeightCalculator, pixelConnectivity: PixelConnectivity) {
+    public init(image: GrayImage, weight: @escaping WeightCalculator, connectivity: Int) {
         self.image = image
         self.weight = weight
-        self.pixelConnectivity = pixelConnectivity
+        self.pixelConnectivity = PixelConnectivity(rawValue: connectivity) ?? .four
         setupHole()
         setupBoundary()
     }
@@ -43,10 +43,10 @@ struct ImageFiller {
         }
     }
 
-    func fill() -> GrayImage {
+    public func fill() -> GrayImage {
         let pixels: [Pixel] = image.pixels.enumerated().map({ (offset, pixel) in
             if hole.contains(offset) {
-                return color(pixel)
+                return color(pixel, at: offset)
             } else {
                 return pixel
             }
@@ -54,20 +54,21 @@ struct ImageFiller {
         return GrayImage(pixels: pixels, width: image.width, height: image.height)
     }
 
-    private func color(_ pixel: Pixel) -> Pixel {
+    private func color(_ pixel: Pixel, at offset: Offset) -> Pixel {
         var top: Double = 0
+        let coordinate = image.convertOffsetToCoordinate(offset)
         // TODO: reduce
-        for offset in boundary {
-            if let pixelAtBoundary = image.pixel(at: offset) {
-                top += weight(pixel, pixelAtBoundary) * pixelAtBoundary.value
+        for boundaryOffset in boundary {
+            if let pixelAtBoundary = image.pixel(at: boundaryOffset) {
+                let boundaryCoordinate = image.convertOffsetToCoordinate(boundaryOffset)
+                top += weight(coordinate, boundaryCoordinate) * pixelAtBoundary.value
             }
         }
         var bottom: Double = 0
         // TODO: reduce
-        for offset in boundary {
-            if let pixelAtBoundary = image.pixel(at: offset) {
-                bottom += weight(pixel, pixelAtBoundary)
-            }
+        for boundaryOffset in boundary {
+            let boundaryCoordinate = image.convertOffsetToCoordinate(boundaryOffset)
+            bottom += weight(coordinate, boundaryCoordinate)
         }
         // make sure bottom is not nil else return unchanged pixel
         guard bottom != 0 else {return pixel}
